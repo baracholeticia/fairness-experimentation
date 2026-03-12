@@ -1,60 +1,69 @@
 import pandas as pd
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 import os
-import numpy as np
 
-# função que realiza pre-processamento e retorna a dataframe
-def preprocess_dataset(df):
-    # Primeiro são removidas as colunas que não ajudam na predição
-    cols_to_drop = [
-        'NOME_BANCO',  # apresentou muitos nulos e irrelevante
-        'NOME_TITULAR',  # info pessoal
-        'NOME_PESSOA_OD',  # info pessoal
-        'CPF_CNPJ_TITULAR',  # info pessoal
-        'CPF_CNPJ_OD',  # info pessoal
-        'NUMERO_CONTA_OD',  # identificação
-        'NUMERO_CONTA'  # identificação
-    ]
-    df = df.drop(columns=cols_to_drop)
+from feature_engineering import run_feature_engineering
 
-    # tratando valores nulos
+#realiza feature engineering e pré-processamento
+def preprocess_dataset(df: pd.DataFrame): #talvez melhor fazer tudo em memoria sem salvar o processamento msm
+    #agregando antes de descartar identificadores
+    df = run_feature_engineering(df)
 
-    #agora, o objetivo é padronizar os valores das colunas numericas extremas entre si para não comprometer o treinamento
-    num_cols = ['VALOR_TRANSACAO', 'VALOR_SALDO']
-    scaler = StandardScaler()  #usa-se standardscaler para não distorcer a escala das features
-    df[num_cols] = scaler.fit_transform(df[num_cols])
+    #CNAB: múltiplas categorias -> OHE
+    #NATUREZA_LANCAMENTO: D/C ->OHE
+    cat_cols = [c for c in ['CNAB', 'NATUREZA_LANCAMENTO'] if c in df.columns]
 
-    #tratando variaveis categoricas
-    # CNAB: foram observadas 4 possibilidades, então será usado one-hot encoding
-    # NATUREZA_LANCAMENTO: D ou C, poderia ser label mas será OHE por ter mesmo efeito na prática nesse caso
-    cat_cols = ['CNAB', 'NATUREZA_LANCAMENTO']
-    ohe = OneHotEncoder(sparse_output=False, drop='first')  #evita colinearidade no OHE
-    cat_encoded = ohe.fit_transform(df[cat_cols])
-    cat_encoded_df = pd.DataFrame(cat_encoded, columns=ohe.get_feature_names_out(cat_cols))
-
-    #removendo col originais categóricas e adicionando codificadas
-    df = df.drop(columns=cat_cols)
-    df = pd.concat([df.reset_index(drop=True), cat_encoded_df.reset_index(drop=True)], axis=1)
-
-    #RAMO_ATIVIDADE_1 não será usado como input como denotado no comando do projeto,sendo mantido para métricas de fairness
-    protected_col = df['RAMO_ATIVIDADE_1']
-
-    # Retornar dataset pré-processado e atributo protegido separado
-    return df, protected_col # por ora não sera usado esse segundo retorno
+    if cat_cols:
+        ohe = OneHotEncoder(sparse_output=False, drop='first', handle_unknown='ignore')#drop first para evitar
+        # colinearidade
+        cat_encoded    = ohe.fit_transform(df[cat_cols])
+        cat_encoded_df = pd.DataFrame(
+            cat_encoded,
+            columns=ohe.get_feature_names_out(cat_cols),
+            index=df.index
+        )
+        df = df.drop(columns=cat_cols)
+        df = pd.concat([df, cat_encoded_df], axis=1)
 
 
-path = "../data/raw"
+    #usando standardscaler para não distorcer a escala relativa
+    num_cols = [c for c in [
+        'VALOR_TRANSACAO', 'VALOR_SALDO',
+        'valor_total_dia', 'valor_medio_dia', 'std_valor_dia', 'ticket_medio_dia',
+        'valor_total_mes', 'velocidade_gasto_mes',
+        'ratio_transacao_saldo', 'concentracao_cnpj_mes',
+        'desvio_valor_vs_media_dia',
+        'grau_saida_global', 'grau_entrada_global',
+    ] if c in df.columns]
 
-datasets = []
+    if num_cols:
+        scaler = StandardScaler()
+        df[num_cols] = scaler.fit_transform(df[num_cols])
 
-for file in os.listdir(path):
-    if file.endswith(".csv"):
-        df = pd.read_csv(os.path.join(path, file), low_memory=False)
-        df_clean, protected = preprocess_dataset(df)
-        df_clean.to_csv(f"../data/processed/{file.replace(".csv", "")}_processed.csv", index=False)
-        print(df_clean.head())
-        print(protected.value_counts())  # distribuição do grupo privilegiado vs não privilegiado
-                                         # CASO EU VÁ REPONDERAR
-        datasets.append(df_clean)
+    #separando atributo protegido
+    protected_col = df.pop('RAMO_ATIVIDADE_1') if 'RAMO_ATIVIDADE_1' in df.columns else None
 
+    #separando POSSIVEL target TODO: Verificar se é mesmo
+    y = df.pop('I-d')
+
+    return df, y, protected_col
+
+# #testando
+# path = "../data/raw"
+# datasets = []
+#
+# for file in sorted(os.listdir(path)):
+#     if not file.endswith(".csv"):
+#         continue
+#
+#     raw = pd.read_csv(os.path.join(path, file), low_memory=False)
+#     df_processed, protected = preprocess_dataset(raw)
+#
+#     datasets.append({
+#         "file":      file,
+#         "df":        df_processed,
+#         "protected": protected,
+#     })
+#
+#     print(f"[{file}]  shape={df_processed.shape}  colunas={list(df_processed.columns)}")
 
