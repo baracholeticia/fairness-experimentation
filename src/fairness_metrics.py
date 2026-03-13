@@ -1,15 +1,14 @@
 from aif360.metrics import ClassificationMetric
 
-#grupo privilegiado : 1, grupo desprivilegiado: 4
-privileged_groups = [{'RAMO_ATIVIDADE': 1}]
-unprivileged_groups = [{'RAMO_ATIVIDADE': 4}]
+# grupo privilegiado =1, desprivilegiado =4
+privileged_groups = [{'RAMO_ATIVIDADE': 1.0}]
+unprivileged_groups = [{'RAMO_ATIVIDADE': 0.0}]
 
 def evaluate_fairness(dataset_test, predictions):
-    #dataset com previões para comparar o real com o predito
-    dataset_predicted = dataset_test.copy()
+    # cria uma cópia para receber as previsões
+    dataset_predicted = dataset_test.copy(deepcopy=True)
     dataset_predicted.labels = predictions.reshape(-1, 1)
     
-    #inicializa a classe de métricas do aif360
     metrics = ClassificationMetric(
         dataset_test, 
         dataset_predicted,
@@ -17,16 +16,11 @@ def evaluate_fairness(dataset_test, predictions):
         privileged_groups=privileged_groups
     )
     
-    #extrai as 4 métricas que foram utilizadas no artigo 
-    stat_parity = metrics.statistical_parity_difference()
-    avg_odds = metrics.average_abs_odds_difference()
-    equal_opp = metrics.equal_opportunity_difference()
-    disp_impact = metrics.disparate_impact()
-    
-    #transforma em valores absolutos
+    # extrai as métricas
     return {
-        'Statistical Parity (Abs)': abs(stat_parity),
-        'Average Abs Odds': abs(avg_odds),
-        'Equal Opportunity (Abs)': abs(equal_opp),
-        'Disparate Impact': min(abs(1 - disp_impact), 1.0) #normaliza a distancia para 1
+        'Accuracy': metrics.accuracy(),
+        'Statistical Parity (Abs)': abs(metrics.statistical_parity_difference()),
+        'Average Abs Odds': abs(metrics.average_abs_odds_difference()),
+        'Equal Opportunity (Abs)': abs(metrics.equal_opportunity_difference()),
+        'Disparate Impact': min(abs(1 - metrics.disparate_impact()), 1.0)
     }
