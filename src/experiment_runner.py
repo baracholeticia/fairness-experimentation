@@ -55,7 +55,14 @@ def run_experiment():
         
         df = X.copy()
         df[TARGET_COL] = y.values
-        df[PROTECTED_COL] = prot.values 
+        df[PROTECTED_COL] = prot.values
+
+        idx = (
+            df.groupby(PROTECTED_COL, group_keys=False)
+            .apply(lambda x: x.sample(frac=0.3, random_state=42))
+            .index
+        )
+        df = df.loc[idx].reset_index(drop=True)
         
         datasets.append(df)
         nomes_bases.append(pref)
